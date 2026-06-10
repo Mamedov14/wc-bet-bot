@@ -1,8 +1,12 @@
+# syntax=docker/dockerfile:1
 FROM gradle:8.7-jdk17 AS build
 WORKDIR /app
+ENV GRADLE_USER_HOME=/gradle-cache
 COPY settings.gradle.kts build.gradle.kts ./
 COPY src ./src
-RUN gradle distTar --no-daemon
+
+RUN --mount=type=cache,target=/gradle-cache \
+    gradle distTar --no-daemon -x test
 
 FROM eclipse-temurin:17-jre
 WORKDIR /app

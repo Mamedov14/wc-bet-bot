@@ -62,12 +62,24 @@ class BetBot(
                 userRepository.upsert(BetUser(from.id, message.chatId, from.userName, from.firstName, STATUS_ACTIVE))
                 send(
                     message.chatId,
-                    "Привет, ${from.firstName ?: "болельщик"}! ⚽\n\n" +
-                        "Я буду присылать матчи ЧМ-2026 — ставь прогноз кнопками под сообщением.\n" +
-                        "Ставка фиксируется со стартовым свистком.\n\n" +
-                        "Очки: победитель — 1, победитель и точный счёт — 2, " +
-                        "ничья (не угадал счёт) — 2, ничья с точным счётом — 3.\n\n" +
-                        "/table — таблица игроков\n/stop — отписаться"
+                    """
+                    Привет, ${from.firstName ?: "болельщик"}! ⚽️
+
+                    Это конкурс прогнозов на <b>ЧМ-2026</b>. Каждый день я присылаю матчи — ставь счёт кнопками под сообщением. До стартового свистка прогноз можно менять сколько угодно, со свистком ставка фиксируется.
+
+                    🎯 <b>Очки</b>
+                    0 — не угадал победителя
+                    1 — угадал победителя
+                    2 — угадал победителя и точный счёт
+                    2 — угадал ничью, но не счёт
+                    3 — ничья и точный счёт
+
+                    📊 /table — таблица игроков
+                    🔕 /stop — отписаться
+
+                    Удачи! 🏆
+                    """.trimIndent(),
+                    html = true,
                 )
             }
 
@@ -175,8 +187,12 @@ class BetBot(
         }
     }
 
-    private fun send(chatId: Long, text: String) {
-        execute(SendMessage(chatId.toString(), text))
+    private fun send(chatId: Long, text: String, html: Boolean = false) {
+        val message = SendMessage(chatId.toString(), text)
+        if (html) {
+            message.enableHtml(true)
+        }
+        execute(message)
     }
 
     private fun handleSendError(user: BetUser, e: TelegramApiException) {
