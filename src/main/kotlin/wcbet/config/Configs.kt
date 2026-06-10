@@ -18,4 +18,10 @@ interface AppConfig {
 
     /** За сколько часов вперёд рассылать матчи для прогноза. */
     fun notifyHorizonHours(): Long
+
+    /** За сколько минут до матча напоминать тем, у кого прогноз остался 0:0. */
+    fun reminderMinutes(): Long
+
+    /** Время утреннего дайджеста (HH:mm, в поясе app.zone). */
+    fun digestTime(): String
 }

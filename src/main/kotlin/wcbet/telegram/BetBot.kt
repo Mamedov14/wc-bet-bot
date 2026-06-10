@@ -22,6 +22,7 @@ import wcbet.model.STATUS_STOPPED
 import wcbet.repo.BetRepository
 import wcbet.repo.MatchRepository
 import wcbet.repo.UserRepository
+import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -38,6 +39,7 @@ class BetBot(
     private val log = LoggerFactory.getLogger(BetBot::class.java)
     private val botName = botConfig.name()
     private val dateFormatter = DateTimeFormatter.ofPattern("dd.MM HH:mm")
+    private val timeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
     override fun getBotUsername(): String = botName
 
@@ -56,56 +58,156 @@ class BetBot(
 
     private fun handleCommand(message: Message) {
         val text = message.text.trim()
+        if (!text.startsWith("/")) {
+            return
+        }
+        // "/table@my_bot arg" -> команда "/table", адресат "my_bot"
+        val token = text.split(" ", limit = 2)[0]
+        val target = token.substringAfter("@", "")
+        if (target.isNotEmpty() && !target.equals(botName, ignoreCase = true)) {
+            return // команда адресована другому боту
+        }
+        val command = token.substringBefore("@").lowercase()
         val from = message.from ?: return
-        when {
-            text.startsWith("/start") -> {
+
+        // в группах работает только таблица — ставки делаются в личке
+        if (!message.chat.isUserChat) {
+            when (command) {
+                "/table", "/score" -> send(message.chatId, leaderboardText())
+                "/start", "/help", "/matches", "/my" ->
+                    send(message.chatId, "Прогнозы делаются в личке — напиши мне: @$botName 😉\nЗдесь работает /table")
+            }
+            return
+        }
+
+        when (command) {
+            "/start" -> {
                 userRepository.upsert(BetUser(from.id, message.chatId, from.userName, from.firstName, STATUS_ACTIVE))
-                send(
-                    message.chatId,
-                    """
-                    Привет, ${from.firstName ?: "болельщик"}! ⚽️
-
-                    Это конкурс прогнозов на <b>ЧМ-2026</b>. Каждый день я присылаю матчи — ставь счёт кнопками под сообщением. До стартового свистка прогноз можно менять сколько угодно, со свистком ставка фиксируется.
-
-                    🎯 <b>Очки</b>
-                    0 — не угадал победителя
-                    1 — угадал победителя
-                    2 — угадал победителя и точный счёт
-                    2 — угадал ничью, но не счёт
-                    3 — ничья и точный счёт
-
-                    📊 /table — таблица игроков
-                    🔕 /stop — отписаться
-
-                    Удачи! 🏆
-                    """.trimIndent(),
-                    html = true,
-                )
+                send(message.chatId, welcomeText(from.firstName))
+                sendUpcomingMatches(from.id, message.chatId, silentIfEmpty = true)
             }
 
-            text.startsWith("/stop") -> {
+            "/matches", "/today" -> sendUpcomingMatches(from.id, message.chatId, silentIfEmpty = false)
+
+            "/my", "/bets" -> send(message.chatId, myBetsText(from.id))
+
+            "/table", "/score" -> send(message.chatId, leaderboardText())
+
+            "/stop" -> {
                 userRepository.updateStatus(from.id, STATUS_STOPPED)
-                send(message.chatId, "Окей, больше не беспокою. Вернуться — /start")
+                send(message.chatId, "🔕 Окей, больше не беспокою.\nВернуться в игру — /start")
             }
 
-            text.startsWith("/table") || text.startsWith("/score") -> send(message.chatId, leaderboardText())
+            else -> send(
+                message.chatId,
+                """
+                Не знаю такой команды 🤷
+
+                ⚽️ /matches — матчи для прогноза
+                📋 /my — мои ставки на сегодня
+                📊 /table — таблица игроков
+                🔕 /stop — отписаться
+                """.trimIndent()
+            )
         }
     }
 
-    private fun leaderboardText(): String {
+    private fun welcomeText(firstName: String?): String = """
+        Привет, ${escapeHtml(firstName ?: "болельщик")}! ⚽️
+
+        Это конкурс прогнозов на <b>ЧМ-2026</b>. Каждый день я присылаю матчи — ставь счёт кнопками под сообщением. До стартового свистка прогноз можно менять сколько угодно, со свистком ставка фиксируется.
+
+        🎯 <b>Очки</b>
+        0 — не угадал победителя
+        1 — угадал победителя
+        2 — угадал победителя и точный счёт
+        2 — угадал ничью, но не счёт
+        3 — ничья и точный счёт
+
+        ⚽️ /matches — матчи для прогноза
+        📋 /my — мои ставки на сегодня
+        📊 /table — таблица игроков
+        🔕 /stop — отписаться
+
+        Удачи! 🏆
+    """.trimIndent()
+
+    /**
+     * Шлёт карточки всех ещё не начавшихся матчей в ближайшие notifyHorizonHours часов.
+     * Если ставки нет — создаёт; если есть — присылает свежую карточку с текущим прогнозом.
+     */
+    private fun sendUpcomingMatches(userId: Long, chatId: Long, silentIfEmpty: Boolean) {
+        val user = userRepository.findById(userId) ?: run {
+            send(chatId, "Сначала подпишись — /start")
+            return
+        }
+        val now = OffsetDateTime.now()
+        val matches = matchRepository.findBetween(now, now.plusHours(appConfig.notifyHorizonHours()))
+        if (matches.isEmpty()) {
+            if (!silentIfEmpty) {
+                send(chatId, "😴 Ближайших матчей для прогноза нет.\nКак только появятся — пришлю сам!")
+            }
+            return
+        }
+        for (match in matches) {
+            val bet = betRepository.findByUserAndMatch(user.id, match.id)
+            val messageId = sendBetCard(user, match, bet?.homeScore ?: 0, bet?.awayScore ?: 0) ?: continue
+            if (bet == null) {
+                betRepository.insert(user.id, match.id, messageId)
+            } else {
+                betRepository.updateMessageId(bet.id, messageId)
+            }
+        }
+    }
+
+    /** Сводка ставок игрока на сегодня одним сообщением. */
+    private fun myBetsText(userId: Long): String {
+        val zone = ZoneId.of(appConfig.zone())
+        val startOfDay = LocalDate.now(zone).atStartOfDay(zone).toOffsetDateTime()
+        val matches = matchRepository.findBetween(startOfDay, startOfDay.plusDays(1))
+        if (matches.isEmpty()) {
+            return "Сегодня матчей нет 😴\nБлижайшие пришлю сам, или смотри /matches"
+        }
+        val now = OffsetDateTime.now()
+        val sb = StringBuilder("📋 <b>Твои ставки на сегодня</b>\n\n")
+        for (match in matches) {
+            val bet = betRepository.findByUserAndMatch(userId, match.id)
+            val betStr = bet?.let { "${it.homeScore}:${it.awayScore}" } ?: "—"
+            val time = match.date.atZoneSameInstant(zone).format(timeFormatter)
+            val home = escapeHtml(match.homeSquadName)
+            val away = escapeHtml(match.awaySquadName)
+            val line = when {
+                match.homeScore != null && match.awayScore != null -> {
+                    val pts = bet?.points?.let { " → <b>+$it</b>" } ?: ""
+                    "🏁 $home <b>${match.homeScore}:${match.awayScore}</b> $away · прогноз $betStr$pts"
+                }
+
+                match.started(now) -> "🔒 $time $home — $away · прогноз <b>$betStr</b>"
+
+                else -> "🕒 $time $home — $away · прогноз <b>$betStr</b>"
+            }
+            sb.append(line).append("\n")
+        }
+        sb.append("\nПоменять прогноз — /matches")
+        return sb.toString()
+    }
+
+    fun leaderboardText(): String {
         val rows = betRepository.leaderboard()
         if (rows.isEmpty()) {
             return "Пока никто не играет. Будь первым — /start"
         }
-        val sb = StringBuilder("🏆 Таблица игроков\n\n")
+        val sb = StringBuilder("🏆 <b>Таблица игроков</b>\n\n")
         rows.forEachIndexed { i, row ->
             val place = when (i) {
                 0 -> "🥇"
                 1 -> "🥈"
                 2 -> "🥉"
-                else -> "${i + 1}."
+                else -> "  ${i + 1}."
             }
-            sb.append("$place ${row.name} — ${row.points} очк. (матчей: ${row.matches})\n")
+            val points = "${row.points} ${plural(row.points, "очко", "очка", "очков")}"
+            val matches = "${row.matches} ${plural(row.matches, "матч", "матча", "матчей")}"
+            sb.append("$place ${escapeHtml(row.name)} — <b>$points</b> · $matches\n")
         }
         return sb.toString()
     }
@@ -118,9 +220,9 @@ class BetBot(
             return
         }
         val matchId = parts[1].toIntOrNull() ?: return
-        val match = matchRepository.findById(matchId) ?: return answer(callback, "Матч не найден")
+        val match = matchRepository.findById(matchId) ?: return answer(callback, "Матч не найден 🤔")
         val bet = betRepository.findByUserAndMatch(callback.from.id, matchId)
-            ?: return answer(callback, "Ставка не найдена, дождись новой рассылки")
+            ?: return answer(callback, "Ставка не найдена — обнови карточки: /matches")
 
         if (match.started(OffsetDateTime.now())) {
             return answer(callback, "⛔ Матч начался — ставка зафиксирована: ${bet.homeScore}:${bet.awayScore}")
@@ -142,8 +244,9 @@ class BetBot(
         betRepository.updateScore(bet.id, home, away)
         val edit = EditMessageText().apply {
             chatId = callback.message.chatId.toString()
-            messageId = bet.messageId
-            text = matchText(match, home, away)
+            messageId = callback.message.messageId   // правим именно ту карточку, где нажали
+            text = matchCardText(match, home, away)
+            parseMode = "HTML"
             replyMarkup = keyboard(match)
         }
         execute(edit)
@@ -162,9 +265,10 @@ class BetBot(
     // --- outgoing messages ---
 
     /** @return messageId отправленного сообщения или null, если отправить не удалось. */
-    fun sendBetMessage(user: BetUser, match: Match): Int? {
+    fun sendBetCard(user: BetUser, match: Match, home: Int, away: Int): Int? {
         return try {
-            val message = SendMessage(user.chatId.toString(), matchText(match, 0, 0)).apply {
+            val message = SendMessage(user.chatId.toString(), matchCardText(match, home, away)).apply {
+                enableHtml(true)
                 replyMarkup = keyboard(match)
             }
             execute(message).messageId
@@ -174,24 +278,32 @@ class BetBot(
         }
     }
 
-    fun sendResult(user: BetUser, match: Match, bet: Bet, points: Int) {
+    /** Безопасная отправка произвольного текста пользователю (для джобов). */
+    fun sendTo(user: BetUser, text: String) {
         try {
-            send(
-                user.chatId,
-                "🏁 ${match.homeSquadName} ${match.homeScore}:${match.awayScore} ${match.awaySquadName}\n" +
-                    "Твой прогноз: ${bet.homeScore}:${bet.awayScore}\n" +
-                    "Начислено: +$points очк.\n\nТаблица — /table"
-            )
+            send(user.chatId, text)
         } catch (e: TelegramApiException) {
             handleSendError(user, e)
         }
     }
 
-    private fun send(chatId: Long, text: String, html: Boolean = false) {
+    fun sendResult(user: BetUser, match: Match, bet: Bet, points: Int) {
+        sendTo(
+            user,
+            """
+            🏁 <b>${escapeHtml(match.homeSquadName)} ${match.homeScore}:${match.awayScore} ${escapeHtml(match.awaySquadName)}</b>
+
+            Твой прогноз: ${bet.homeScore}:${bet.awayScore}
+            Начислено: <b>+$points ${plural(points.toLong(), "очко", "очка", "очков")}</b>
+
+            📊 Таблица — /table
+            """.trimIndent()
+        )
+    }
+
+    private fun send(chatId: Long, text: String) {
         val message = SendMessage(chatId.toString(), text)
-        if (html) {
-            message.enableHtml(true)
-        }
+        message.enableHtml(true)
         execute(message)
     }
 
@@ -204,13 +316,15 @@ class BetBot(
         }
     }
 
-    private fun matchText(match: Match, home: Int, away: Int): String {
+    private fun matchCardText(match: Match, home: Int, away: Int): String {
         val zone = ZoneId.of(appConfig.zone())
         val localTime = match.date.atZoneSameInstant(zone).format(dateFormatter)
-        return "🏆 ${stageName(match.stage)}\n" +
-            "${match.homeSquadName} — ${match.awaySquadName}\n" +
-            "🕒 $localTime\n\n" +
-            "Твой прогноз: $home : $away"
+        return """
+            ⚽️ <b>${escapeHtml(match.homeSquadName)} — ${escapeHtml(match.awaySquadName)}</b>
+            <i>${stageName(match.stage)}</i> · 🕒 $localTime
+
+            Твой прогноз: <b>$home : $away</b>
+        """.trimIndent()
     }
 
     private fun keyboard(match: Match): InlineKeyboardMarkup {
@@ -222,15 +336,5 @@ class BetBot(
                 listOf(btn("➖ ${match.awaySquadName}", "b:$id:a-"), btn("➕ ${match.awaySquadName}", "b:$id:a+")),
             )
         )
-    }
-
-    private fun stageName(stage: String): String = when (stage.uppercase()) {
-        "GROUP" -> "Групповой этап"
-        "R32" -> "1/16 финала"
-        "R16" -> "1/8 финала"
-        "QF" -> "Четвертьфинал"
-        "SF" -> "Полуфинал"
-        "F" -> "Финал"
-        else -> stage
     }
 }

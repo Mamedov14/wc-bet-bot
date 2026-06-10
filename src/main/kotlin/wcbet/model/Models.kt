@@ -47,6 +47,7 @@ data class Bet(
     @Column("away_score") val awayScore: Int,
     @Column("points") val points: Int?,
     @Column("result_notified") val resultNotified: Boolean,
+    @Column("reminder_sent") val reminderSent: Boolean,
 )
 
 @EntityJdbc

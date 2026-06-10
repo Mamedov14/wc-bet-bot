@@ -6,12 +6,19 @@ import ru.tinkoff.kora.scheduling.jdk.annotation.ScheduleAtFixedRate
 import wcbet.config.AppConfig
 import wcbet.fifa.FifaApi
 import wcbet.model.Match
+import wcbet.model.STATUS_ACTIVE
 import wcbet.repo.BetRepository
+import wcbet.repo.DigestRepository
 import wcbet.repo.MatchRepository
 import wcbet.repo.UserRepository
 import wcbet.service.ScoreCalculator
 import wcbet.telegram.BetBot
+import wcbet.telegram.escapeHtml
+import java.time.LocalDate
+import java.time.LocalTime
 import java.time.OffsetDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 /**
  * Тянет расписание/результаты из FIFA API, обновляет матчи,
@@ -118,10 +125,103 @@ class NotificationJob(
                 if (betRepository.findByUserAndMatch(user.id, match.id) != null) {
                     continue
                 }
-                val messageId = bot.sendBetMessage(user, match) ?: continue
+                val messageId = bot.sendBetCard(user, match, 0, 0) ?: continue
                 betRepository.insert(user.id, match.id, messageId)
                 log.info("Sent bet message for match {} to user {}", match.id, user.id)
             }
         }
+    }
+}
+
+/**
+ * Напоминает за reminderMinutes до матча тем, у кого прогноз так и остался 0:0.
+ */
+@Component
+class ReminderJob(
+    private val bot: BetBot,
+    private val userRepository: UserRepository,
+    private val matchRepository: MatchRepository,
+    private val betRepository: BetRepository,
+    private val appConfig: AppConfig,
+) {
+
+    private val log = LoggerFactory.getLogger(ReminderJob::class.java)
+    private val timeFormatter = DateTimeFormatter.ofPattern("HH:mm")
+
+    @ScheduleAtFixedRate(config = "jobs.reminder")
+    fun remind() {
+        val zone = ZoneId.of(appConfig.zone())
+        val now = OffsetDateTime.now()
+        val matches = matchRepository.findBetween(now, now.plusMinutes(appConfig.reminderMinutes()))
+
+        for (match in matches) {
+            for (bet in betRepository.findByMatch(match.id)) {
+                if (bet.reminderSent || bet.homeScore != 0 || bet.awayScore != 0) {
+                    continue
+                }
+                val user = userRepository.findById(bet.userId) ?: continue
+                if (user.status != STATUS_ACTIVE) {
+                    continue
+                }
+                val time = match.date.atZoneSameInstant(zone).format(timeFormatter)
+                bot.sendTo(
+                    user,
+                    "⏰ <b>${escapeHtml(match.homeSquadName)} — ${escapeHtml(match.awaySquadName)}</b> " +
+                        "начнётся в <b>$time</b>, а твой прогноз всё ещё <i>0 : 0</i>.\n" +
+                        "Успей поменять — /matches"
+                )
+                betRepository.markReminderSent(bet.id)
+                log.info("Sent 0:0 reminder for match {} to user {}", match.id, user.id)
+            }
+        }
+    }
+}
+
+/**
+ * Утренний дайджест: результаты вчерашних матчей + таблица одним сообщением.
+ * Отправляется раз в день после app.digestTime (фиксируется в digest_log).
+ */
+@Component
+class DigestJob(
+    private val bot: BetBot,
+    private val userRepository: UserRepository,
+    private val matchRepository: MatchRepository,
+    private val digestRepository: DigestRepository,
+    private val appConfig: AppConfig,
+) {
+
+    private val log = LoggerFactory.getLogger(DigestJob::class.java)
+
+    @ScheduleAtFixedRate(config = "jobs.digest")
+    fun digest() {
+        val zone = ZoneId.of(appConfig.zone())
+        val today = LocalDate.now(zone)
+        if (LocalTime.now(zone).isBefore(LocalTime.parse(appConfig.digestTime()))) {
+            return
+        }
+        if (digestRepository.countForDay(today) > 0) {
+            return
+        }
+        digestRepository.claim(today) // день занят, даже если вчера матчей не было
+
+        val from = today.minusDays(1).atStartOfDay(zone).toOffsetDateTime()
+        val to = today.atStartOfDay(zone).toOffsetDateTime()
+        val finished = matchRepository.findBetween(from, to)
+            .filter { it.homeScore != null && it.awayScore != null }
+        if (finished.isEmpty()) {
+            return
+        }
+
+        val sb = StringBuilder("☀️ <b>Итоги вчерашних матчей</b>\n\n")
+        for (m in finished) {
+            sb.append("🏁 ${escapeHtml(m.homeSquadName)} <b>${m.homeScore}:${m.awayScore}</b> ${escapeHtml(m.awaySquadName)}\n")
+        }
+        sb.append("\n").append(bot.leaderboardText())
+        sb.append("\n⚽️ Матчи сегодня — /matches")
+
+        val text = sb.toString()
+        val users = userRepository.findAllActive()
+        users.forEach { bot.sendTo(it, text) }
+        log.info("Sent morning digest to {} users ({} matches)", users.size, finished.size)
     }
 }

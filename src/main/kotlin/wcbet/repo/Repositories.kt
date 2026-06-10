@@ -7,6 +7,7 @@ import wcbet.model.Bet
 import wcbet.model.BetUser
 import wcbet.model.LeaderboardRow
 import wcbet.model.Match
+import java.time.LocalDate
 import java.time.OffsetDateTime
 
 @Repository
@@ -80,10 +81,10 @@ interface MatchRepository : JdbcRepository {
 @Repository
 interface BetRepository : JdbcRepository {
 
-    @Query("select id, user_id, match_id, message_id, home_score, away_score, points, result_notified from bets where user_id = :userId and match_id = :matchId")
+    @Query("select id, user_id, match_id, message_id, home_score, away_score, points, result_notified, reminder_sent from bets where user_id = :userId and match_id = :matchId")
     fun findByUserAndMatch(userId: Long, matchId: Int): Bet?
 
-    @Query("select id, user_id, match_id, message_id, home_score, away_score, points, result_notified from bets where match_id = :matchId")
+    @Query("select id, user_id, match_id, message_id, home_score, away_score, points, result_notified, reminder_sent from bets where match_id = :matchId")
     fun findByMatch(matchId: Int): List<Bet>
 
     @Query(
@@ -98,11 +99,17 @@ interface BetRepository : JdbcRepository {
     @Query("update bets set home_score = :homeScore, away_score = :awayScore where id = :id")
     fun updateScore(id: Long, homeScore: Int, awayScore: Int)
 
+    @Query("update bets set message_id = :messageId where id = :id")
+    fun updateMessageId(id: Long, messageId: Int)
+
     @Query("update bets set points = :points where id = :id")
     fun updatePoints(id: Long, points: Int)
 
     @Query("update bets set result_notified = true where id = :id")
     fun markNotified(id: Long)
+
+    @Query("update bets set reminder_sent = true where id = :id")
+    fun markReminderSent(id: Long)
 
     @Query(
         """
@@ -116,4 +123,14 @@ interface BetRepository : JdbcRepository {
         """
     )
     fun leaderboard(): List<LeaderboardRow>
+}
+
+@Repository
+interface DigestRepository : JdbcRepository {
+
+    @Query("select count(*) from digest_log where day = :day")
+    fun countForDay(day: LocalDate): Long
+
+    @Query("insert into digest_log(day) values (:day) on conflict (day) do nothing")
+    fun claim(day: LocalDate)
 }
