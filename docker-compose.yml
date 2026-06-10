@@ -1,0 +1,35 @@
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: bet
+      POSTGRES_USER: bet_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-password}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U bet_user -d bet" ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    # порт наружу нужен только для локальной отладки:
+    ports:
+      - "15432:5432"
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      BOT_TOKEN: ${BOT_TOKEN}
+      BOT_NAME: ${BOT_NAME}
+      DB_URL: jdbc:postgresql://postgres:5432/bet
+      DB_USER: bet_user
+      DB_PASSWORD: ${DB_PASSWORD:-password}
+      APP_ZONE: ${APP_ZONE:-Europe/Moscow}
+
+volumes:
+  pgdata:
