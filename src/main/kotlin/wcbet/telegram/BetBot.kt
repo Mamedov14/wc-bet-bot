@@ -22,6 +22,7 @@ import wcbet.model.STATUS_STOPPED
 import wcbet.repo.BetRepository
 import wcbet.repo.MatchRepository
 import wcbet.repo.UserRepository
+import wcbet.service.AnalyticsService
 import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.ZoneId
@@ -34,10 +35,12 @@ class BetBot(
     private val userRepository: UserRepository,
     private val matchRepository: MatchRepository,
     private val betRepository: BetRepository,
+    private val analyticsService: AnalyticsService,
 ) : TelegramLongPollingBot(botConfig.token()) {
 
     private val log = LoggerFactory.getLogger(BetBot::class.java)
     private val botName = botConfig.name()
+    private val adminId = botConfig.adminId()
     private val dateFormatter = DateTimeFormatter.ofPattern("dd.MM HH:mm")
     private val timeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
@@ -98,6 +101,19 @@ class BetBot(
                 send(message.chatId, "🔕 Окей, больше не беспокою.\nВернуться в игру — /start")
             }
 
+            // --- админские команды (не светятся в меню) ---
+            "/stats", "/consensus", "/crowd", "/broadcast" -> {
+                if (adminId == null || from.id != adminId) {
+                    send(message.chatId, "Эта команда только для админа 😎")
+                    return
+                }
+                when (command) {
+                    "/stats" -> send(message.chatId, analyticsService.statsText())
+                    "/consensus", "/crowd" -> send(message.chatId, analyticsService.consensusText())
+                    "/broadcast" -> broadcast(message, token)
+                }
+            }
+
             else -> send(
                 message.chatId,
                 """
@@ -118,11 +134,11 @@ class BetBot(
         Это конкурс прогнозов на <b>ЧМ-2026</b>. Каждый день я присылаю матчи — ставь счёт кнопками под сообщением. До стартового свистка прогноз можно менять сколько угодно, со свистком ставка фиксируется.
 
         🎯 <b>Очки</b>
-        0 — не угадал победителя
+        0 — не угадал исход
         1 — угадал победителя
-        2 — угадал победителя и точный счёт
-        2 — угадал ничью, но не счёт
-        3 — ничья и точный счёт
+        2 — угадал победителя и разницу мячей
+        3 — угадал точный счёт
+        2 — угадал ничью · 3 — точный счёт ничьей
 
         ⚽️ /matches — матчи для прогноза
         📋 /my — мои ставки на сегодня
@@ -278,12 +294,31 @@ class BetBot(
         }
     }
 
-    /** Безопасная отправка произвольного текста пользователю (для джобов). */
-    fun sendTo(user: BetUser, text: String) {
-        try {
+    /** Рассылка произвольного сообщения всем активным игрокам: /broadcast текст (HTML поддерживается). */
+    private fun broadcast(message: Message, commandToken: String) {
+        val payload = message.text.trim().removePrefix(commandToken).trim()
+        if (payload.isEmpty()) {
+            send(
+                message.chatId,
+                "Использование: <code>/broadcast текст</code>\n" +
+                    "Можно несколько строк и HTML-разметку: &lt;b&gt;жирный&lt;/b&gt;, &lt;i&gt;курсив&lt;/i&gt;.\n" +
+                    "Уйдёт всем активным игрокам сразу — без подтверждения, так что перечитай перед отправкой 😉"
+            )
+            return
+        }
+        val users = userRepository.findAllActive()
+        val delivered = users.count { sendTo(it, payload) }
+        send(message.chatId, "📨 Доставлено: <b>$delivered</b> из ${users.size}")
+    }
+
+    /** Безопасная отправка произвольного текста пользователю (для джобов). @return true, если доставлено. */
+    fun sendTo(user: BetUser, text: String): Boolean {
+        return try {
             send(user.chatId, text)
+            true
         } catch (e: TelegramApiException) {
             handleSendError(user, e)
+            false
         }
     }
 

@@ -1,28 +1,27 @@
 package wcbet.service
 
 /**
- * Правила начисления очков:
- *  0 — не угадал победителя
- *  1 — угадал победителя
- *  2 — угадал победителя и счёт
- *  2 — угадал, что будет ничья, но не угадал счёт
- *  3 — матч завершился ничьей и угадан точный счёт
+ * Правила начисления очков (v2):
+ *  0 — не угадал исход
+ *  1 — угадал победителя, но не разницу мячей
+ *  2 — угадал победителя и разницу мячей
+ *  3 — угадал победителя и точный счёт
+ *  2 — угадал, что будет ничья (разница совпала автоматически)
+ *  3 — угадал точный счёт ничьей
  *
- * Считается по счёту основного времени (как в старом bet-app, пенальти не учитываются).
+ * Считается по счёту основного времени (пенальти не учитываются).
  */
 object ScoreCalculator {
 
     fun points(betHome: Int, betAway: Int, resultHome: Int, resultAway: Int): Int {
-        val betSign = Integer.signum(betHome - betAway)
-        val resultSign = Integer.signum(resultHome - resultAway)
-        if (betSign != resultSign) {
+        val betDiff = betHome - betAway
+        val resultDiff = resultHome - resultAway
+        if (Integer.signum(betDiff) != Integer.signum(resultDiff)) {
             return 0
         }
-        val exactScore = betHome == resultHome && betAway == resultAway
         return when {
-            resultSign == 0 && exactScore -> 3
-            resultSign == 0 -> 2
-            exactScore -> 2
+            betHome == resultHome && betAway == resultAway -> 3
+            betDiff == resultDiff -> 2
             else -> 1
         }
     }

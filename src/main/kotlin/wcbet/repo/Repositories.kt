@@ -7,6 +7,8 @@ import wcbet.model.Bet
 import wcbet.model.BetUser
 import wcbet.model.LeaderboardRow
 import wcbet.model.Match
+import wcbet.model.PlayerStatsRow
+import wcbet.model.PlayerWeightRow
 import java.time.LocalDate
 import java.time.OffsetDateTime
 
@@ -123,6 +125,35 @@ interface BetRepository : JdbcRepository {
         """
     )
     fun leaderboard(): List<LeaderboardRow>
+
+    @Query(
+        """
+        select coalesce(u.first_name, u.username, cast(u.id as varchar))                          as name,
+               count(b.id)                                                                        as settled,
+               coalesce(sum(b.points), 0)                                                         as points,
+               count(b.id) filter (where b.points >= 1)                                           as outcomes,
+               count(b.id) filter (where b.home_score = m.home_score
+                                     and b.away_score = m.away_score)                             as exacts,
+               count(b.id) filter (where b.home_score = b.away_score)                             as draw_bets
+        from bets b
+                 join users u on u.id = b.user_id
+                 join matches m on m.id = b.match_id
+        where b.points is not null
+        group by u.id
+        order by points desc
+        """
+    )
+    fun playerStats(): List<PlayerStatsRow>
+
+    @Query(
+        """
+        select user_id, coalesce(sum(points), 0) as points, count(*) as settled
+        from bets
+        where points is not null
+        group by user_id
+        """
+    )
+    fun playerWeights(): List<PlayerWeightRow>
 }
 
 @Repository

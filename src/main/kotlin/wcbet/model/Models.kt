@@ -56,3 +56,20 @@ data class LeaderboardRow(
     @Column("points") val points: Long,
     @Column("matches") val matches: Long,
 )
+
+@EntityJdbc
+data class PlayerStatsRow(
+    @Column("name") val name: String,
+    @Column("settled") val settled: Long,
+    @Column("points") val points: Long,
+    @Column("outcomes") val outcomes: Long,
+    @Column("exacts") val exacts: Long,
+    @Column("draw_bets") val drawBets: Long,
+)
+
+@EntityJdbc
+data class PlayerWeightRow(
+    @Column("user_id") val userId: Long,
+    @Column("points") val points: Long,
+    @Column("settled") val settled: Long,
+)

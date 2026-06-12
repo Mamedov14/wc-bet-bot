@@ -6,6 +6,9 @@ import ru.tinkoff.kora.config.common.annotation.ConfigSource
 interface BotConfig {
     fun token(): String
     fun name(): String
+
+    /** Telegram id админа — открывает /stats и /consensus. Не задан — команды отключены. */
+    fun adminId(): Long?
 }
 
 @ConfigSource("app")
