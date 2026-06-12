@@ -30,6 +30,7 @@ services:
       DB_USER: bet_user
       DB_PASSWORD: ${DB_PASSWORD:-password}
       APP_ZONE: ${APP_ZONE:-Europe/Moscow}
+      ADMIN_ID: ${ADMIN_ID:-0}
 
 volumes:
   pgdata:
