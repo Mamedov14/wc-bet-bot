@@ -258,6 +258,8 @@ class BetBot(
         }
 
         betRepository.updateScore(bet.id, home, away)
+        betRepository.logScoreChange(bet.id, callback.from.id, matchId, home, away)
+        log.info("Score change: user {} match {} -> {}:{}", callback.from.id, matchId, home, away)
         val edit = EditMessageText().apply {
             chatId = callback.message.chatId.toString()
             messageId = callback.message.messageId   // правим именно ту карточку, где нажали

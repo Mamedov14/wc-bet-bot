@@ -48,6 +48,8 @@ data class Bet(
     @Column("points") val points: Int?,
     @Column("result_notified") val resultNotified: Boolean,
     @Column("reminder_sent") val reminderSent: Boolean,
+    @Column("created_at") val createdAt: OffsetDateTime,
+    @Column("updated_at") val updatedAt: OffsetDateTime,
 )
 
 @EntityJdbc

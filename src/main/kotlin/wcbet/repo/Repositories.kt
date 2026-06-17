@@ -83,10 +83,10 @@ interface MatchRepository : JdbcRepository {
 @Repository
 interface BetRepository : JdbcRepository {
 
-    @Query("select id, user_id, match_id, message_id, home_score, away_score, points, result_notified, reminder_sent from bets where user_id = :userId and match_id = :matchId")
+    @Query("select id, user_id, match_id, message_id, home_score, away_score, points, result_notified, reminder_sent, created_at, updated_at from bets where user_id = :userId and match_id = :matchId")
     fun findByUserAndMatch(userId: Long, matchId: Int): Bet?
 
-    @Query("select id, user_id, match_id, message_id, home_score, away_score, points, result_notified, reminder_sent from bets where match_id = :matchId")
+    @Query("select id, user_id, match_id, message_id, home_score, away_score, points, result_notified, reminder_sent, created_at, updated_at from bets where match_id = :matchId")
     fun findByMatch(matchId: Int): List<Bet>
 
     @Query(
@@ -98,8 +98,16 @@ interface BetRepository : JdbcRepository {
     )
     fun insert(userId: Long, matchId: Int, messageId: Int)
 
-    @Query("update bets set home_score = :homeScore, away_score = :awayScore where id = :id")
+    @Query("update bets set home_score = :homeScore, away_score = :awayScore, updated_at = now() where id = :id")
     fun updateScore(id: Long, homeScore: Int, awayScore: Int)
+
+    @Query(
+        """
+        insert into bet_score_changes(bet_id, user_id, match_id, home_score, away_score)
+        values (:betId, :userId, :matchId, :homeScore, :awayScore)
+        """
+    )
+    fun logScoreChange(betId: Long, userId: Long, matchId: Int, homeScore: Int, awayScore: Int)
 
     @Query("update bets set message_id = :messageId where id = :id")
     fun updateMessageId(id: Long, messageId: Int)
