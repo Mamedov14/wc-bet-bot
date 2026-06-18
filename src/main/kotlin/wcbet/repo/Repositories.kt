@@ -123,7 +123,7 @@ interface BetRepository : JdbcRepository {
 
     @Query(
         """
-        select coalesce(u.first_name, u.username, cast(u.id as varchar)) as name,
+        select coalesce('@' || u.username, u.first_name, cast(u.id as varchar)) as name,
                coalesce(sum(b.points), 0)                                as points,
                count(b.points)                                           as matches
         from users u
