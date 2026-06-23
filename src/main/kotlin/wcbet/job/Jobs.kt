@@ -88,7 +88,9 @@ class SyncJob(
                     betRepository.updatePoints(bet.id, points)
                 }
                 if (finished && !bet.resultNotified) {
-                    userRepository.findById(bet.userId)?.let { bot.sendResult(it, match, bet, points) }
+                    userRepository.findById(bet.userId)
+                        ?.takeIf { it.status == STATUS_ACTIVE }
+                        ?.let { bot.sendResult(it, match, bet, points) }
                     betRepository.markNotified(bet.id)
                 }
             }
