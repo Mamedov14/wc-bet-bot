@@ -27,4 +27,10 @@ interface AppConfig {
 
     /** Время утреннего дайджеста (HH:mm, в поясе app.zone). */
     fun digestTime(): String
+
+    /**
+     * Плашка о временном режиме. Если непусто — добавляется к /start, /matches, /my, /table
+     * и в дайджест. После слияния баз очистить (пустая строка/убрать env) — плашка исчезнет.
+     */
+    fun temporaryNotice(): String?
 }
