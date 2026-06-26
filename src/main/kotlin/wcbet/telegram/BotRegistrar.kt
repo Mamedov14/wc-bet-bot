@@ -19,6 +19,7 @@ class BotRegistrar(private val bot: BetBot) : Lifecycle {
 
     override fun init() {
         session = TelegramBotsApi(DefaultBotSession::class.java).registerBot(bot)
+        bot.resolveUsername()
         registerCommands()
         log.info("Telegram bot '{}' registered, long polling started", bot.botUsername)
     }
@@ -37,6 +38,8 @@ class BotRegistrar(private val bot: BetBot) : Lifecycle {
                         BotCommand("matches", "⚽️ матчи для прогноза"),
                         BotCommand("my", "📋 мои ставки на сегодня"),
                         BotCommand("table", "📊 таблица игроков"),
+                        BotCommand("groups", "🗂 таблицы групп"),
+                        BotCommand("bracket", "🏆 сетка плей-офф"),
                         BotCommand("start", "🔔 подписаться на матчи"),
                         BotCommand("stop", "🔕 отписаться"),
                     )

@@ -65,6 +65,15 @@ interface MatchRepository : JdbcRepository {
 
     @Query(
         """
+        select id, stage, date, home_squad_name, away_squad_name, home_score, away_score, status
+        from matches
+        order by date
+        """
+    )
+    fun findAll(): List<Match>
+
+    @Query(
+        """
         insert into matches(id, stage, date, home_squad_name, away_squad_name, home_score, away_score, status)
         values (:m.id, :m.stage, :m.date, :m.homeSquadName, :m.awaySquadName, :m.homeScore, :m.awayScore, :m.status)
         on conflict (id) do update set
