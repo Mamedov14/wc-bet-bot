@@ -123,19 +123,12 @@ interface BetRepository : JdbcRepository {
 
     @Query(
         """
-        with live as (
-            select coalesce('@' || u.username, u.first_name, cast(u.id as varchar)) as label,
-                   coalesce(sum(b.points), 0) as pts,
-                   count(b.points)            as m
-            from users u
-                     left join bets b on b.user_id = u.id
-            group by u.id
-        )
-        select coalesce(live.label, leg.label)                  as name,
-               coalesce(live.pts, 0) + coalesce(leg.points, 0)  as points,
-               coalesce(live.m, 0)   + coalesce(leg.matches, 0) as matches
-        from live
-                 full outer join legacy_score leg on leg.label = live.label
+        select coalesce('@' || u.username, u.first_name, cast(u.id as varchar)) as name,
+               coalesce(sum(b.points), 0)                                as points,
+               count(b.points)                                           as matches
+        from users u
+                 left join bets b on b.user_id = u.id
+        group by u.id
         order by points desc, matches desc
         """
     )

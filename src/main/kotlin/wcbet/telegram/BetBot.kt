@@ -128,11 +128,7 @@ class BetBot(
         }
     }
 
-    private fun noticeText(): String? = appConfig.temporaryNotice()?.trim()?.takeIf { it.isNotEmpty() }
-
-    private fun noticeBlock(): String = noticeText()?.let { "$it\n\n" } ?: ""
-
-    private fun welcomeText(firstName: String?): String = noticeBlock() + """
+    private fun welcomeText(firstName: String?): String = """
         Привет, ${escapeHtml(firstName ?: "болельщик")}! ⚽️
 
         Это конкурс прогнозов на <b>ЧМ-2026</b>. Каждый день я присылаю матчи — ставь счёт кнопками под сообщением. До стартового свистка прогноз можно менять сколько угодно, со свистком ставка фиксируется.
@@ -169,7 +165,6 @@ class BetBot(
             }
             return
         }
-        noticeText()?.let { send(chatId, it) }
         for (match in matches) {
             val bet = betRepository.findByUserAndMatch(user.id, match.id)
             val messageId = sendBetCard(user, match, bet?.homeScore ?: 0, bet?.awayScore ?: 0) ?: continue
@@ -190,7 +185,7 @@ class BetBot(
             return "Сегодня матчей нет 😴\nБлижайшие пришлю сам, или смотри /matches"
         }
         val now = OffsetDateTime.now()
-        val sb = StringBuilder(noticeBlock() + "📋 <b>Твои ставки на сегодня</b>\n\n")
+        val sb = StringBuilder("📋 <b>Твои ставки на сегодня</b>\n\n")
         for (match in matches) {
             val bet = betRepository.findByUserAndMatch(userId, match.id)
             val betStr = bet?.let { "${it.homeScore}:${it.awayScore}" } ?: "—"
@@ -216,9 +211,9 @@ class BetBot(
     fun leaderboardText(): String {
         val rows = betRepository.leaderboard()
         if (rows.isEmpty()) {
-            return noticeBlock() + "Пока никто не играет. Будь первым — /start"
+            return "Пока никто не играет. Будь первым — /start"
         }
-        val sb = StringBuilder(noticeBlock() + "🏆 <b>Таблица игроков</b>\n\n")
+        val sb = StringBuilder("🏆 <b>Таблица игроков</b>\n\n")
         rows.forEachIndexed { i, row ->
             val place = when (i) {
                 0 -> "🥇"
