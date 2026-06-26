@@ -217,7 +217,6 @@ class BetBot(
             }
             return
         }
-        noticeText()?.let { send(chatId, it) }
         val match = matches[0]
         val bet = ensureBet(user.id, match.id)
         val message = SendMessage(chatId.toString(), carouselText(match, bet.homeScore, bet.awayScore, 0, matches.size)).apply {
